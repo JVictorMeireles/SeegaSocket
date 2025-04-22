@@ -1,5 +1,6 @@
 # import socket
 import tkinter as tk
+import tkinter.messagebox as tkmsg
 import random as rd
 
 TAM_TABULEIRO = 5
@@ -25,17 +26,25 @@ class SeegaGame:
 		self.selecionado = None  # para armazenar a peça clicada na fase de movimento
 
 		self.cria_widgets()
-		self.atualizar_status(f"Fase de colocação - Jogador: {self.jogador_atual}")
+		self.att_status(f"Fase de colocação - Jogador: {self.jogador_atual}")
 		self.label_cont_pecas = tk.Label(self.root, text="", font=("Arial", 12))
 		self.label_cont_pecas.pack()
 		self.att_cont_pecas()
-		self.turn_placements = 0  # contador de peças por turno
+		self.pos_turno = 0  # contador de peças por turno
 		self.movimento_continuado = False  # flag para capturas consecutivas
+		self.bt_desistencia = tk.Button(self.root, text="Desistir", command=self.desistencia)
+		self.bt_desistencia.pack(pady=10)
 
 	def cria_widgets(self):
-		frame = tk.Frame(self.root)
-		frame.pack()
+		self.frame = tk.Frame(self.root)
+		self.frame.pack()
 
+		self.configura_botoes(self.frame)
+
+		self.label_status = tk.Label(self.root, text="", font=("Arial", 14))
+		self.label_status.pack(pady=10)
+
+	def configura_botoes(self, frame):
 		for y in range(TAM_TABULEIRO):
 			for x in range(TAM_TABULEIRO):
 				btn = tk.Button(
@@ -44,10 +53,7 @@ class SeegaGame:
 				btn.grid(row=y, column=x)
 				self.botoes[y][x] = btn
 
-		self.label_status = tk.Label(self.root, text="", font=("Arial", 14))
-		self.label_status.pack(pady=10)
-
-	def atualizar_status(self, message):
+	def att_status(self, message):
 		self.label_status.config(text=message)
 
 	def on_click(self, x, y):
@@ -63,16 +69,16 @@ class SeegaGame:
 		self.tabuleiro[y][x] = self.jogador_atual
 		self.botoes[y][x].config(text=self.jogador_atual)
 		self.posicionado[self.jogador_atual] += 1
-		self.turn_placements += 1
+		self.pos_turno += 1
 
 		if self.posicionado[JOGADOR1] == self.pecas_totais and self.posicionado[JOGADOR2] == self.pecas_totais:
 			self.fase = "movimento"
-			self.atualizar_status(f"Fase de movimento - Jogador: {self.jogador_atual}")
+			self.att_status(f"Fase de movimento - Jogador: {self.jogador_atual}")
 		else:
-			if self.turn_placements == 2:
-				self.turn_placements = 0
+			if self.pos_turno == 2:
+				self.pos_turno = 0
 				self.troca_jogador()
-			self.atualizar_status(f"Fase de colocação - Jogador: {self.jogador_atual}")
+			self.att_status(f"Fase de colocação - Jogador: {self.jogador_atual}")
 		self.att_cont_pecas()
 
 	def handle_movimento(self, x, y):
@@ -90,17 +96,17 @@ class SeegaGame:
 				if capturou:
 					self.selecionado = (x, y)  # Mantém a peça selecionada
 					self.movimento_continuado = True
-					self.atualizar_status(f"Captura! {self.jogador_atual} pode mover novamente.")
+					self.att_status(f"Captura! {self.jogador_atual} pode mover novamente.")
 				else:
 					self.selecionado = None
 					self.movimento_continuado = False
 					self.troca_jogador()
-					self.atualizar_status(f"Fase de movimento - Jogador: {self.jogador_atual}")
+					self.att_status(f"Fase de movimento - Jogador: {self.jogador_atual}")
 				self.att_cont_pecas()
 			else:
 				self.selecionado = None
 				self.movimento_continuado = False
-				self.atualizar_status("Movimento inválido. Tente novamente.")
+				self.att_status("Movimento inválido. Tente novamente.")
 		else:
 			if self.tabuleiro[y][x] == self.jogador_atual:
 				if not self.movimento_continuado or self.selecionado == (x, y):
@@ -135,18 +141,24 @@ class SeegaGame:
 	def att_cont_pecas(self):
 		p1 = sum(row.count(JOGADOR1) for row in self.tabuleiro)
 		p2 = sum(row.count(JOGADOR2) for row in self.tabuleiro)
-		self.label_cont_pecas.config(text=f"Peças restantes - X: {p1} | O: {p2}")
+		if(self.fase=="posicionamento"):
+			self.label_cont_pecas.config(text=f"Peças restantes - X: {self.pecas_totais-p1} | O: {self.pecas_totais-p2}")
+		else:
+			self.label_cont_pecas.config(text=f"Peças restantes - X: {p1} | O: {p2}")
 
 		if p1 == 0 and self.fase == "movimento":
-			self.atualizar_status("Jogador O venceu!")
-			self.disable_all()
+			self.att_status("Jogador O venceu!")
+			self.desabilita()
+			self.popup_vencedor(JOGADOR2)
 		elif p2 == 0 and self.fase == "movimento":
-			self.atualizar_status("Jogador X venceu!")
-			self.disable_all()
+			self.att_status("Jogador X venceu!")
+			self.desabilita()
+			self.popup_vencedor(JOGADOR1)
 		elif not self.tem_movimentos(self.jogador_atual) and self.fase == "movimento":
-			winner = JOGADOR1 if self.jogador_atual == JOGADOR2 else JOGADOR2
-			self.atualizar_status(f"Jogador {winner} venceu! ({self.jogador_atual} sem movimentos)")
-			self.disable_all()
+			vencedor = JOGADOR1 if self.jogador_atual == JOGADOR2 else JOGADOR2
+			self.att_status(f"Jogador {vencedor} venceu! ({self.jogador_atual} sem movimentos)")
+			self.desabilita()
+			self.popup_vencedor(vencedor)
 	
 	def tem_movimentos(self, JOGADOR):
 		for y in range(TAM_TABULEIRO):
@@ -158,10 +170,46 @@ class SeegaGame:
 							return True
 		return False
 	
-	def disable_all(self):
+	def desabilita(self):
 		for row in self.botoes:
 			for btn in row:
 				btn.config(state="disabled")
+
+	def habilita(self):
+		for row in self.botoes:
+			for btn in row:
+				btn.config(state="normal")
+
+	def desistencia(self):
+		confirma = tkmsg.askquestion("Desistir", "Você tem certeza que deseja desistir?")
+		if confirma:
+			vencedor = JOGADOR1 if self.jogador_atual == JOGADOR2 else JOGADOR2
+			self.att_status(f"Jogador {vencedor} venceu por desistência!")
+			self.desabilita()
+			self.popup_vencedor(vencedor)
+
+	def popup_vencedor(self, vencedor):
+		tkmsg.showinfo("Fim de Jogo", f"Jogador {vencedor} venceu!")
+		self.reinicia_jogo()
+
+	def reinicia_jogo(self):
+    # Redefina todas as variáveis
+		self.tabuleiro = [[VAZIO for _ in range(5)] for _ in range(5)]
+		for y in range(5):
+			for x in range(5):
+				self.botoes = [[None for _ in range(TAM_TABULEIRO)] for _ in range(TAM_TABULEIRO)]
+		self.configura_botoes(self.frame)
+
+		self.jogador_atual = rd.choice([JOGADOR1, JOGADOR2])
+		self.fase = "placement"
+		self.placed = {JOGADOR1: 0, JOGADOR2: 0}
+		self.pos_turno = 0
+		self.selecionado = None
+		self.movimento_continuado = False
+
+		self.att_status(f"Fase de colocação - Jogador: {self.jogador_atual}")
+		self.att_cont_pecas()
+		self.habilita()
 
 
 if __name__ == "__main__":
