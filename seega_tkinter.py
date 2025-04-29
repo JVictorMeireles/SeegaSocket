@@ -2,9 +2,8 @@
 import tkinter as tk
 import tkinter.messagebox as tkmsg
 import random as rd
+import numpy as np
 
-TAM_TABULEIRO = 5
-VAZIO = None
 JOGADOR1 = "X"
 JOGADOR2 = "O"
 
@@ -21,8 +20,9 @@ class SeegaGame:
 		self.cria_widgets()
 
 	def set_jogo(self):
-		self.tabuleiro = [[VAZIO for _ in range(TAM_TABULEIRO)] for _ in range(TAM_TABULEIRO)]
-		self.botoes = [[None for _ in range(TAM_TABULEIRO)] for _ in range(TAM_TABULEIRO)]
+		self.tamanho = 5
+		self.tabuleiro = [[None for _ in range(self.tamanho)] for _ in range(self.tamanho)]
+		self.botoes = [[None for _ in range(self.tamanho)] for _ in range(self.tamanho)]
 		self.fase = "posicionamento"  # posicionamento ou movimento
 		self.jogador_atual = rd.choice(self.jogadores) #escolhe jogador aleatoriamente
 		self.posicionado = {JOGADOR1: 0, JOGADOR2: 0}
@@ -45,6 +45,8 @@ class SeegaGame:
 		self.att_cont_pecas()
 		self.bt_desistencia = tk.Button(self.root, text="Desistir", command=self.desistencia)
 		self.bt_desistencia.pack(pady=10)
+		self.bt_encerrar_jogo = tk.Button(self.root, text="Encerrar", command=self.encerra_jogo)
+		self.bt_encerrar_jogo.pack(pady=10)
 
 	def reinicia_jogo(self):
     # Redefine todas as variáveis
@@ -56,8 +58,8 @@ class SeegaGame:
 		self.habilita()
 
 	def configura_botoes(self, frame):
-		for y in range(TAM_TABULEIRO):
-			for x in range(TAM_TABULEIRO):
+		for y in range(self.tamanho):
+			for x in range(self.tamanho):
 				btn = tk.Button(
 					frame, text="", width=4, height=2,
 					command=lambda x=x, y=y: self.on_click(x, y))
@@ -75,8 +77,8 @@ class SeegaGame:
 			self.handle_movimento(x, y)
 
 	def handle_posicionamento(self, x, y):
-		meio = (TAM_TABULEIRO-TAM_TABULEIRO%2)/2
-		if self.tabuleiro[y][x] is not VAZIO or (x == meio and y == meio):
+		meio = (self.tamanho-self.tamanho%2)/2
+		if self.tabuleiro[y][x] is not None or (x == meio and y == meio):
 			return
 
 		self.tabuleiro[y][x] = self.jogador_atual
@@ -97,10 +99,10 @@ class SeegaGame:
 	def handle_movimento(self, x, y):
 		if self.selecionado:
 			sx, sy = self.selecionado
-			if self.adjacente(sx, sy, x, y) and self.tabuleiro[y][x] is VAZIO:
+			if self.adjacente(sx, sy, x, y) and self.tabuleiro[y][x] is None:
 				# movimentar a peça
 				self.tabuleiro[y][x] = self.jogador_atual
-				self.tabuleiro[sy][sx] = VAZIO
+				self.tabuleiro[sy][sx] = None
 				self.botoes[y][x].config(text=self.jogador_atual)
 				self.botoes[sy][sx].config(text="")
 
@@ -124,18 +126,6 @@ class SeegaGame:
 			if self.tabuleiro[y][x] == self.jogador_atual:
 				if not self.movimento_continuado or self.selecionado == (x, y):
 					self.selecionado = (x, y)
-		# self.att_cont_pecas()
-
-	# def grande_vitoria(self):
-		# j1_capturas = self.capturou[PLAYER1]
-		# j2_capturas = self.capturou[PLAYER2]
-
-		# if j1_capturas > j2_capturas:
-		# 	self.show_winner_popup("Jogador X venceu (grande vitória)!")
-		# elif j2_capturas > j1_capturas:
-		# 	self.show_winner_popup("Jogador O venceu (grande vitória)!")
-		# else:
-		# 	self.show_winner_popup("Empate (mesmo número de peças capturadas)!")
 
 	def adjacente(self, x1, y1, x2, y2):
 		return abs(x1 - x2) + abs(y1 - y2) == 1
@@ -147,21 +137,20 @@ class SeegaGame:
 		capturou = False
 		oponente = JOGADOR1 if self.jogador_atual == JOGADOR2 else JOGADOR2
 		directions = [(-1,0), (1,0), (0,-1), (0,1)]
-		# self.att_cont_pecas()
 
 		for dx, dy in directions:
 			nx1, ny1 = x + dx, y + dy
 			nx2, ny2 = x + 2*dx, y + 2*dy
 			if self.valido(nx1, ny1) and self.valido(nx2, ny2):
 				if self.tabuleiro[ny1][nx1] == oponente and self.tabuleiro[ny2][nx2] == self.jogador_atual:
-					self.tabuleiro[ny1][nx1] = VAZIO
+					self.tabuleiro[ny1][nx1] = None
 					self.botoes[ny1][nx1].config(text="")
 					capturou = True
 					self.capturou[self.jogador_atual]+=1
 		return capturou
 
 	def valido(self, x, y):
-		return 0 <= x < TAM_TABULEIRO and 0 <= y < TAM_TABULEIRO
+		return 0 <= x < self.tamanho and 0 <= y < self.tamanho
 
 	def att_cont_pecas(self):
 		p1 = sum(row.count(JOGADOR1) for row in self.tabuleiro)
@@ -172,22 +161,10 @@ class SeegaGame:
 			self.label_cont_pecas.config(text=f"Peças restantes - X: {p1} | O: {p2}")
 
 		if self.fase == "movimento":
-			self.vitoria(p1, p2)
-			# if p1 == 0:
-			# 	self.att_status("Jogador O venceu!")
-			# 	self.desabilita()
-			# 	self.popup_game_over(JOGADOR2)
-			# elif p2 == 0:
-			# 	self.att_status("Jogador X venceu!")
-			# 	self.desabilita()
-			# 	self.popup_game_over(JOGADOR1)
-			# elif not self.tem_movimentos(self.jogador_atual):
-			# 	vencedor = JOGADOR1 if self.jogador_atual == JOGADOR2 else JOGADOR2
-			# 	self.att_status(f"Jogador {vencedor} venceu! ({self.jogador_atual} sem movimentos)")
-			# 	self.desabilita()
-			# 	self.popup_game_over(vencedor)
-	
-	def vitoria(self, p1, p2):
+			self.checa_vitoria(p1, p2)
+
+	def checa_vitoria(self, p1, p2):
+		peq_vitoria, vencedor = self.pequena_vitoria()
 		if p2 == 0: #Jogador 1 capturou todas as peças
 			self.desabilita()
 			self.popup_game_over(f"Jogador {JOGADOR1} venceu!")
@@ -198,41 +175,66 @@ class SeegaGame:
 			vencedor = JOGADOR1 if self.jogador_atual == JOGADOR2 else JOGADOR2
 			self.desabilita()
 			self.popup_game_over(f"Jogador {vencedor} venceu! ({self.jogador_atual} sem movimentos)")
-		elif not self.capturas_possiveis(): #Sem mais capturas possíveis (ganha quem capturou mais)
-			j1_capturas = self.capturou[JOGADOR1]
-			j2_capturas = self.capturou[JOGADOR2]
-			if j1_capturas > j2_capturas:
-				vencedor = JOGADOR1
-			elif j2_capturas > j1_capturas:
-				vencedor = JOGADOR2
-			else:
-				self.popup_game_over("Empate (mesmo número de peças capturadas)!")
-				return
-			self.popup_game_over(f"Jogador {vencedor} venceu (grande vitória)!")
+		elif peq_vitoria:
+			self.desabilita()
+			self.popup_game_over(f"Jogador {vencedor} venceu! (pequena vitória)")
+
+	def pequena_vitoria(self):
+		def verifica_divisao(cores_por_linha):
+			index_zero = cores_por_linha.index(0)
+
+			esquerda = [x for x in cores_por_linha[:index_zero] if x != 0]
+			direita = [x for x in cores_por_linha[index_zero+1:] if x != 0]
+			print(set(esquerda))
+			print(set(direita))
+			return ((set(esquerda) == {JOGADOR1} and set(direita) == {JOGADOR2}) or (set(esquerda) == {JOGADOR2} and set(direita) == {JOGADOR1}))
+		matriz = np.array(self.tabuleiro)
+		for t in range(2):
+			matriz = matriz.T if t == 1 else matriz
+			for i in range(1, self.tamanho-1):
+				# print(len(set(matriz[i])))
+				# print(set(matriz[i]))
+				if len(set(matriz[i])) == 1 and set(matriz[i]) != None:
+					cores_por_linha = [None for _ in range(self.tamanho)]
+					for j in range(self.tamanho):
+						if i == j:
+							cores_por_linha[j] = 0
+							continue
+						set_linha = set([x for x in matriz[j] if x != None])
+						print(set_linha)
+						print(len(set_linha))
+						if len(set_linha) > 1:
+							return (0, None)
+						elif len(set_linha) == 1:
+							cores_por_linha[j] = list(set_linha)[0]
+					if verifica_divisao(cores_por_linha):
+						return (1, JOGADOR1) if matriz[i][0] == JOGADOR1 else (1, JOGADOR2)
+		return (0, None)
+
+		# #confere se nas linhas (exceto primeira e ultima) tem uma barreira
+		# for y in range(1, self.tamanho-1):
+		# 	x = 0
+		# 	if not self.tabuleiro[y][x] == NULL:
+		# 		jogador = self.tabuleiro[y][x]
+		# 		oponente = JOGADOR1 if jogador == JOGADOR2 else JOGADOR2
+		# 		for x in range(1, self.tamanho):
+		# 			if not self.tabuleiro[y][x] == jogador:
+		# 				break
+		# 			for nx in range(0,x):
 
 	def tem_movimentos(self, JOGADOR):
-		for y in range(TAM_TABULEIRO):
-			for x in range(TAM_TABULEIRO):
+		for y in range(self.tamanho):
+			for x in range(self.tamanho):
 				if self.tabuleiro[y][x] == JOGADOR:
 					for dx, dy in [(-1,0), (1,0), (0,-1), (0,1)]:
 						nx, ny = x + dx, y + dy
-						if self.valido(nx, ny) and self.tabuleiro[ny][nx] is VAZIO:
+						if self.valido(nx, ny) and self.tabuleiro[ny][nx] is None:
 							return True
 		return False
-	
-	def desabilita(self):
-		for row in self.botoes:
-			for btn in row:
-				btn.config(state="disabled")
-
-	def habilita(self):
-		for row in self.botoes:
-			for btn in row:
-				btn.config(state="normal")
 
 	def capturas_possiveis(self):
-		for y in range(TAM_TABULEIRO):
-			for x in range(TAM_TABULEIRO):
+		for y in range(self.tamanho):
+			for x in range(self.tamanho):
 				jogador = self.tabuleiro[y][x]
 				if jogador in (JOGADOR1, JOGADOR2) and self.pode_capturar(x,y,jogador):
 					return True
@@ -249,6 +251,49 @@ class SeegaGame:
 					return True
 		return False
 
+	def highlight_captura(self):
+    # limpa todos os destaques
+		for y in range(5):
+			for x in range(5):
+				self.botoes[y][x].config(bg="SystemButtonFace")
+
+    # destaca as peças que podem capturar
+		for y in range(5):
+			for x in range(5):
+				if self.tabuleiro[y][x] == self.jogador_atual:
+					if self.pode_capturar(x, y, self.jogador_atual):
+						self.botoes[y][x].config(bg="yellow")
+
+	def handle_selecao(self, x, y):
+		if self.fase != "movement":
+			return
+
+		if self.tabuleiro[y][x] != self.jogador_atual:
+			return  # só pode selecionar sua própria peça
+
+		if self.captura_disponivel():
+			# Existem capturas obrigatórias
+			if not self.pode_capturar(x, y, self.jogador_atual):
+				return  # Não pode selecionar uma peça que não captura
+
+	def captura_disponivel(self):
+		for y in range(5):
+			for x in range(5):
+				if self.tabuleiro[y][x] == self.jogador_atual:
+					if self.pode_capturar(x, y, self.jogador_atual):
+						return True
+		return False
+
+	def desabilita(self):
+		for row in self.botoes:
+			for btn in row:
+				btn.config(state="disabled")
+
+	def habilita(self):
+		for row in self.botoes:
+			for btn in row:
+				btn.config(state="normal")
+
 	def desistencia(self):
 		#Rever esse trecho de código
 		#(o botão de desistência considera o jogador atual como
@@ -259,6 +304,20 @@ class SeegaGame:
 			self.att_status(f"Jogador {vencedor} venceu por desistência!")
 			self.desabilita()
 			self.popup_game_over(f"Jogador {vencedor} venceu por desistência!")
+
+	def encerra_jogo(self):
+		confirma = tkmsg.askquestion("Encerrar jogo", "Você tem certeza que deseja encerrar o jogo?")
+		if confirma:
+			j1_capturas = self.capturou[JOGADOR1]
+			j2_capturas = self.capturou[JOGADOR2]
+			if j1_capturas > j2_capturas:
+				vencedor = JOGADOR1
+			elif j2_capturas > j1_capturas:
+				vencedor = JOGADOR2
+			else:
+				self.popup_game_over("Empate (mesmo número de peças capturadas)!")
+				return
+			self.popup_game_over(f"Jogador {vencedor} venceu (grande vitória)!")
 
 	def popup_game_over(self, mensagem):
 		popup = tk.Toplevel(self.root)
