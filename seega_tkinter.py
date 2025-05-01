@@ -77,7 +77,7 @@ class SeegaGame:
 			self.handle_movimento(x, y)
 
 	def handle_posicionamento(self, x, y):
-		meio = (self.tamanho-self.tamanho%2)/2
+		meio = (self.tamanho-self.tamanho%2)//2
 		if self.tabuleiro[y][x] is not None or (x == meio and y == meio):
 			return
 
@@ -100,24 +100,31 @@ class SeegaGame:
 		if self.selecionado:
 			sx, sy = self.selecionado
 			if self.adjacente(sx, sy, x, y) and self.tabuleiro[y][x] is None:
-				# movimentar a peça
-				self.tabuleiro[y][x] = self.jogador_atual
-				self.tabuleiro[sy][sx] = None
-				self.botoes[y][x].config(text=self.jogador_atual)
-				self.botoes[sy][sx].config(text="")
-
-				capturou = self.checa_captura(x, y)
-
-				if capturou:
-					self.selecionado = (x, y)  # Mantém a peça selecionada
-					self.movimento_continuado = True
-					self.att_status(f"Captura! {self.jogador_atual} pode mover novamente.")
+				jogadas_obrigatorias = self.get_jogadas_obrigatorias(self.jogador_atual)
+				if jogadas_obrigatorias:
+					pecas_ativas = [origem for origem, _ in jogadas_obrigatorias]
+					if (linha, coluna) in pecas_ativas:
+						# permitir seleção da peça
+						pecas_destino_validas = [destino for origem, destino in jogadas_obrigatorias if origem == (linha, coluna)]
+						# armazenar essas opções para o próximo clique
 				else:
-					self.selecionado = None
-					self.movimento_continuado = False
-					self.troca_jogador()
-					self.att_status(f"Fase de movimento - Jogador: {self.jogador_atual}")
-				self.att_cont_pecas()
+					# lógica normal de jogo sem jogadas obrigatórias
+					# movimentar a peça
+					self.tabuleiro[y][x] = self.jogador_atual
+					self.tabuleiro[sy][sx] = None
+					self.botoes[y][x].config(text=self.jogador_atual)
+					self.botoes[sy][sx].config(text="")
+					capturou = self.checa_captura(x, y)
+					if capturou:
+						self.selecionado = (x, y)  # Mantém a peça selecionada
+						self.movimento_continuado = True
+						self.att_status(f"Captura! {self.jogador_atual} pode mover novamente.")
+					else:
+						self.selecionado = None
+						self.movimento_continuado = False
+						self.troca_jogador()
+						self.att_status(f"Fase de movimento - Jogador: {self.jogador_atual}")
+					self.att_cont_pecas()
 			else:
 				self.selecionado = None
 				self.movimento_continuado = False
@@ -126,6 +133,37 @@ class SeegaGame:
 			if self.tabuleiro[y][x] == self.jogador_atual:
 				if not self.movimento_continuado or self.selecionado == (x, y):
 					self.selecionado = (x, y)
+
+	def get_jogadas_obrigatorias(self, jogador):
+		jogadas = []
+		for x in range(self.tamanho):
+			for y in range(self.tamanho):
+				if self.tabuleiro[y][x] == jogador:
+					movimentos_possiveis = self.get_movimentos_validos(x, y)
+					for destino in movimentos_possiveis:
+						if self.eh_captura((x, y), destino):
+							jogadas.append(((x, y), destino))
+		return jogadas
+
+	def get_movimentos_validos(self, x, y):
+		jogador = self.tabuleiro[y][x]
+		movimentos = []
+		for dx, dy in [(-1,0), (1,0), (0,-1), (0,1)]:
+			nx, ny = x + dx, y + dy
+			if self.valido(nx, ny) and self.tabuleiro[ny][nx] is None:
+				movimentos.append(((x,y),(nx,ny)))
+		return movimentos
+
+	def eh_captura(self, origem, destino):
+		adversario = JOGADOR2 if self.jogador_atual == JOGADOR1 else JOGADOR1
+		x_dest, y_dest = destino
+
+		# Simula o movimento
+		tabuleiro_simulado = [linha[:] for linha in self.tabuleiro]
+		tabuleiro_simulado[origem[0]][origem[1]] = None
+		tabuleiro_simulado[x_dest][y_dest] = self.jogador_atual
+
+		return self.pode_capturar(x_dest, y_dest, self.jogador_atual)
 
 	def adjacente(self, x1, y1, x2, y2):
 		return abs(x1 - x2) + abs(y1 - y2) == 1
@@ -182,18 +220,13 @@ class SeegaGame:
 	def pequena_vitoria(self):
 		def verifica_divisao(cores_por_linha):
 			index_zero = cores_por_linha.index(0)
-
 			esquerda = [x for x in cores_por_linha[:index_zero] if x != 0]
 			direita = [x for x in cores_por_linha[index_zero+1:] if x != 0]
-			print(set(esquerda))
-			print(set(direita))
 			return ((set(esquerda) == {JOGADOR1} and set(direita) == {JOGADOR2}) or (set(esquerda) == {JOGADOR2} and set(direita) == {JOGADOR1}))
 		matriz = np.array(self.tabuleiro)
 		for t in range(2):
 			matriz = matriz.T if t == 1 else matriz
 			for i in range(1, self.tamanho-1):
-				# print(len(set(matriz[i])))
-				# print(set(matriz[i]))
 				if len(set(matriz[i])) == 1 and set(matriz[i]) != None:
 					cores_por_linha = [None for _ in range(self.tamanho)]
 					for j in range(self.tamanho):
@@ -201,8 +234,6 @@ class SeegaGame:
 							cores_por_linha[j] = 0
 							continue
 						set_linha = set([x for x in matriz[j] if x != None])
-						print(set_linha)
-						print(len(set_linha))
 						if len(set_linha) > 1:
 							return (0, None)
 						elif len(set_linha) == 1:
@@ -210,17 +241,6 @@ class SeegaGame:
 					if verifica_divisao(cores_por_linha):
 						return (1, JOGADOR1) if matriz[i][0] == JOGADOR1 else (1, JOGADOR2)
 		return (0, None)
-
-		# #confere se nas linhas (exceto primeira e ultima) tem uma barreira
-		# for y in range(1, self.tamanho-1):
-		# 	x = 0
-		# 	if not self.tabuleiro[y][x] == NULL:
-		# 		jogador = self.tabuleiro[y][x]
-		# 		oponente = JOGADOR1 if jogador == JOGADOR2 else JOGADOR2
-		# 		for x in range(1, self.tamanho):
-		# 			if not self.tabuleiro[y][x] == jogador:
-		# 				break
-		# 			for nx in range(0,x):
 
 	def tem_movimentos(self, JOGADOR):
 		for y in range(self.tamanho):
@@ -299,7 +319,7 @@ class SeegaGame:
 		#(o botão de desistência considera o jogador atual como
 		#desistente, para socket isso é errado)
 		confirma = tkmsg.askquestion("Desistir", "Você tem certeza que deseja desistir?")
-		if confirma:
+		if confirma == "yes":
 			vencedor = JOGADOR1 if self.jogador_atual == JOGADOR2 else JOGADOR2
 			self.att_status(f"Jogador {vencedor} venceu por desistência!")
 			self.desabilita()
@@ -320,14 +340,11 @@ class SeegaGame:
 			self.popup_game_over(f"Jogador {vencedor} venceu (grande vitória)!")
 
 	def popup_game_over(self, mensagem):
-		popup = tk.Toplevel(self.root)
-		popup.title("Fim de Jogo")
-
-		label = tk.Label(popup, text=mensagem, font=("Arial", 14))
-		label.pack(padx=20, pady=10)
-
-		bt_reinicia = tk.Button(popup, text="Jogar Novamente", command=lambda: [popup.destroy(), self.reinicia_jogo()])
-		bt_reinicia.pack(pady=10)
+		# tkmsg.showinfo("Fim de Jogo", mensagem)
+		if tkmsg.askyesno("Reiniciar", f"{mensagem} Deseja jogar novamente?"):
+			self.reinicia_jogo()
+		else:
+			self.root.destroy()
 
 if __name__ == "__main__":
 	root = tk.Tk()
