@@ -19,36 +19,40 @@ COR_P1 = "green"
 COR_P2 = "purple"
 COR_DESTAQUE = "yellow"
 
+#ao terminar a fase de posicionamento, o tabuleiro verifica se há alguma peça
+#com movimentação obrigatória, ou seja, se ela puder fazer um movimento de captura
+#peças com movimentação obrigatória devem ser destacadas
+#ao clicar em uma peça, serão exibidos os movimentos possíveis
+
 class SeegaGame:
-#funções de setup
+#funções de setup/interface
 	def __init__(self, root):
 		self.root = root
 
-		self.jogadores = [JOGADOR1, JOGADOR2]
+		jogadores = [JOGADOR1, JOGADOR2]
 
 		self.label_turno = tk.Label(root, text="")
 		self.label_turno.pack()
 
 		#funções de inicialização do jogo
-		self.set_jogo()
+		self.set_jogo(jogadores)
 		self.cria_widgets(root)
 
-	def set_jogo(self): #inicializa o jogo
+	def set_jogo(self,jogadores): #inicializa o jogo
 		#inicializa o tabuleiro 5x5 vazio
 		self.tabuleiro = [[None for _ in range(TAMANHO)] for _ in range(TAMANHO)]
 
-		#self.botoes = [[None for _ in range(TAMANHO)] for _ in range(TAMANHO)]
-
-		self.fase = "posicionamento"  #as fases do jogo serão de posicionamento ou movimento
-		self.jogador_atual = rd.choice(self.jogadores) #escolhe o primeiro jogador aleatoriamente
+		self.bloqueia = False
+		self.fase_posicionamento = True
+		self.jogador_atual = rd.choice(jogadores)
 
 		#variáveis de jogo
-		self.posicionado = {JOGADOR1: 0, JOGADOR2: 0} #quantas peças foram posicionadas
-		self.capturou = {JOGADOR1: 0, JOGADOR2:0} #quantas peças foram capturadas
-		self.peca_selecionada = None  #para armazenar a peça clicada na fase de movimento
-		self.pecas_pos_p_turno = 0  #contador de peças posicionadas no turno
-		self.continua_movimento = False  #flag para capturas consecutivas
-		self.destinos_validos = [] #lista de destinos válidos para movimentação da peça
+		self.qtd_pecas_posicionadas = {JOGADOR1: 0, JOGADOR2: 0}
+		self.qtd_pecas_jogador_capturou = {JOGADOR1: 0, JOGADOR2:0}
+		self.peca_selecionada = None
+		self.pecas_pos_p_turno = 0
+		self.continua_movimento = False
+		self.destinos_validos = []
 		self.origens_destacadas = []
 
 	def cria_widgets(self,root): #estrutura da interface
@@ -57,9 +61,11 @@ class SeegaGame:
 		height = TAMANHO*TAMANHO_CASA
 		self.canvas = tk.Canvas(root, width=width, height=height)
 		self.canvas.pack()
-		self.canvas.bind("<Button-1>", self.clique) #associa a ação de clique com a função
+		#associa a ação de clique com a função
+		self.canvas.bind("<Button-1>", self.clique)
 
-		self.desenha_tabuleiro() #exibe o tabuleiro
+		#exibe o tabuleiro
+		self.desenha_tabuleiro()
 
 		#texto de informação do estado do jogo
 		self.label_status = tk.Label(root, text="", font=("Arial", 14))
@@ -82,61 +88,75 @@ class SeegaGame:
 
 	def desenha_tabuleiro(self):
 		self.canvas.delete("all") #limpa o tabuleiro
+		#cria o tabuleiro
 		for x in range(TAMANHO):
 			for y in range(TAMANHO):
 				x1, y1 = x * TAMANHO_CASA, y * TAMANHO_CASA
 				x2, y2 = x1 + TAMANHO_CASA, y1 + TAMANHO_CASA
 				self.canvas.create_rectangle(x1, y1, x2, y2, fill=COR_TABULEIRO, outline=COR_LINHA)
+
 				peca = self.tabuleiro[y][x]
+				#desenha as peças
 				if peca:
-					cor = COR_P1 if peca == "Verde" else COR_P2
+					cor = COR_P1 if peca == JOGADOR1 else COR_P2
 					self.canvas.create_oval(x1+10, y1+10, x2-10, y2-10, fill=cor)
-		if self.fase == "movimento":
-			for x, y in self.destinos_validos: #TODO destaca movimentos válidos (verificar)
-				x1, y1 = x * TAMANHO_CASA + 20, y * TAMANHO_CASA + 20
-				x2, y2 = x1 + 20, y1 + 20
-				self.canvas.create_oval(x1, y1, x2, y2, fill="black")
-			self.highlight_captura()
-			# jogadas_obrigatorias = self.get_jogadas_obrigatorias(self.jogador_atual)
+		
+		#fase de movimento
+		if not self.fase_posicionamento:
+			jogadas_obrigatorias = self.get_jogadas_obrigatorias()
+			jogadas_obrigatorias_peca = [j for j in jogadas_obrigatorias if j[0] == self.peca_selecionada]
+			if not self.continua_movimento and jogadas_obrigatorias:
+				for x,y in self.origens_destacadas:
+					self.highlight_peca((x,y))
+				for (x, y) in self.destinos_validos: #destaca movimentos válidos (TODO verificar)
+					x1, y1 = x * TAMANHO_CASA + 20, y * TAMANHO_CASA + 20
+					x2, y2 = x1 + 20, y1 + 20
+					self.canvas.create_oval(x1, y1, x2, y2, fill="black")
+			elif not jogadas_obrigatorias and self.peca_selecionada or self.continua_movimento and not jogadas_obrigatorias_peca:
+				self.highlight_peca(self.peca_selecionada)
+				(xori, yori) = self.peca_selecionada
+				for (x, y) in self.get_destinos_validos(xori, yori): #destaca movimentos válidos (TODO verificar)
+					x1, y1 = x * TAMANHO_CASA + 20, y * TAMANHO_CASA + 20
+					x2, y2 = x1 + 20, y1 + 20
+					self.canvas.create_oval(x1, y1, x2, y2, fill="black")
+			elif self.continua_movimento and jogadas_obrigatorias_peca:
+				self.highlight_peca(self.peca_selecionada)
+				(xori, yori) = self.peca_selecionada
+				destinos_obrigatorios = [dest for _, dest in jogadas_obrigatorias_peca if _ == self.peca_selecionada]
+				for (x, y) in destinos_obrigatorios: #destaca movimentos válidos (TODO verificar)
+					x1, y1 = x * TAMANHO_CASA + 20, y * TAMANHO_CASA + 20
+					x2, y2 = x1 + 20, y1 + 20
+					self.canvas.create_oval(x1, y1, x2, y2, fill="black")
 
-	def reinicia_jogo(self):
-    # Redefine todas as variáveis
-		self.set_jogo()
+	def highlight_peca(self, origem):
+		(x, y) = origem
+		x1, y1 = x * TAMANHO_CASA, y * TAMANHO_CASA
+		x2, y2 = x1 + TAMANHO_CASA, y1 + TAMANHO_CASA
+		self.canvas.create_oval(x1+9, y1+9, x2-9, y2-9, outline=COR_DESTAQUE, width=3)
 
-		self.att_status(f"Fase de colocação - Jogador: {self.jogador_atual}")
-		self.att_cont_pecas()
-		self.desenha_tabuleiro()
-		# self.configura_botoes(self.frame)
-		# self.habilita()
-
-	# def configura_botoes(self, frame):
-	# 	for y in range(TAMANHO):
-	# 		for x in range(TAMANHO):
-	# 			btn = tk.Button(
-	# 				frame, text="", width=4, height=2,
-	# 				command=lambda x=x, y=y: self.on_click(x, y))
-	# 			btn.grid(row=y, column=x)
-	# 			self.botoes[y][x] = btn
-
-
-	def att_status(self, message):
-		self.label_status.config(text=message)
-
+#handlers
 	def clique(self, evento):
-		coluna = evento.x//TAMANHO_CASA
-		linha = evento.y//TAMANHO_CASA
-		if self.fase == "posicionamento":
-			self.handle_posicionamento(coluna, linha)
-		elif self.fase == "movimento":
-			self.handle_movimento(coluna, linha)
+		x = evento.x//TAMANHO_CASA
+		y = evento.y//TAMANHO_CASA
+
+		if not self.bloqueia:
+			if self.fase_posicionamento:
+				self.handle_posicionamento(x, y)
+			else:
+				self.handle_movimento(x, y) #TODO!!!!!!!!!!!!!!!!!!!!
 
 	def handle_posicionamento(self, x, y):
-		if self.tabuleiro[y][x] is None and not (x == 2 and y == 2): #espaço vazio que não seja o meio
+		#ao clicar, verifica se a casa está vazia e não é a do meio
+		#em caso positivo, posiciona a peça do jogador
+		#além disso, cada jogador pode colocar duas peças por turno
+
+		#espaço vazio que não seja o meio
+		if self.tabuleiro[y][x] is None and not (x == 2 and y == 2):
 			self.tabuleiro[y][x] = self.jogador_atual
-			self.posicionado[self.jogador_atual] += 1
+			self.qtd_pecas_posicionadas[self.jogador_atual] += 1
 			self.pecas_pos_p_turno += 1 #varíavel para posicionar 2 peças por turno
-			if all(qtd == 12 for qtd in self.posicionado.values()):
-				self.fase = "movimento"
+			if all(qtd == 12 for qtd in self.qtd_pecas_posicionadas.values()):
+				self.fase_posicionamento = False
 				self.att_status(f"Fase de movimento - Jogador: {self.jogador_atual}")
 			else:
 				if self.pecas_pos_p_turno == 2:
@@ -146,51 +166,57 @@ class SeegaGame:
 			self.att_cont_pecas()
 			self.desenha_tabuleiro()
 
+#aparentemente só falta descobrir como fazer com que a peça que capturou continue selecionada
 	def handle_movimento(self, x, y):
-		#verifica se há jogadas obrigatórias para aquele jogador
-		jogadas_obrigatorias = self.get_jogadas_obrigatorias(self.jogador_atual)
-		if self.peca_selecionada:
+		jogadas_obrigatorias = self.get_jogadas_obrigatorias()
+		jogadas_disponiveis = self.get_jogadas_disponiveis()
+		#selecionando uma peça do jogador atual
+		if self.tabuleiro[y][x] == self.jogador_atual:
+			#se houver jogadas obrigatórias, seleciona uma peça que realize tal jogada
+			if jogadas_obrigatorias:# and not self.continua_movimento:
+				jogadas_validas = [j for j in jogadas_obrigatorias if j[0] == (x, y)]
+				if jogadas_validas:
+					self.peca_selecionada = (x, y)
+					self.destinos_validos = [dest for _, dest in jogadas_validas]
+			#se não houver jogadas obrigatórias, seleciona uma peça qualquer do jogador atual
+			elif not self.continua_movimento or self.peca_selecionada == (x, y):
+				self.peca_selecionada = (x, y)
+				jogadas_disponiveis = self.get_jogadas_disponiveis()
+				jogadas_validas = [j for j in jogadas_disponiveis if j[0] == (x, y)]
+				if jogadas_validas:
+					self.destinos_validos = [dest for _, dest in jogadas_validas]
+		elif self.continua_movimento and self.tabuleiro[y][x] == None:
+			jogadas_obrigatorias_peca = [j for j in jogadas_obrigatorias if j[0] == self.peca_selecionada]
+			if jogadas_obrigatorias_peca:
+				print("jogadas obrigatórias")
+				jogadas_validas = jogadas_obrigatorias_peca
+			else:
+				print("jogadas disponíveis")
+				jogadas_validas = [j for j in jogadas_disponiveis if j[0] == self.peca_selecionada]
 			sx, sy = self.peca_selecionada
 			origem = (sx, sy)
 			destino = (x, y)
-			if destino in self.destinos_validos:
-				capturou = self.mover_peca(origem, destino)
-				self.trata_captura(capturou)
-				self.peca_selecionada = None
-				self.destinos_validos = []
-				self.jogador_atual = JOGADOR2 if self.jogador_atual == JOGADOR1 else JOGADOR2
-		elif self.tabuleiro[y][x] == self.jogador_atual:
-				if jogadas_obrigatorias:
-					jogadas_validas = [j for j in jogadas_obrigatorias if j[0] == (y, x)]
-					if jogadas_validas:
-						self.peca_selecionada = (x, y)
-						self.destinos_validos = [dest for _, dest in jogadas_validas]
-				elif not self.continua_movimento or self.peca_selecionada == (x, y):
-					self.peca_selecionada = (x, y)
-				else:
-					# lógica normal de jogo sem jogadas obrigatórias
-					if self.adjacente(sx, sy, x, y) and self.tabuleiro[y][x] is None:
-						capturou = self.mover_peca(origem, destino)
-						self.trata_captura(capturou)
-					else:
-						self.peca_selecionada = None
-						self.continua_movimento = False
-						self.att_status("Movimento inválido. Tente novamente.")
+			if (origem, destino) in jogadas_validas:
+			# if jogadas_validas:
+				self.peca_selecionada = destino
+				self.destinos_validos = [dest for _, dest in jogadas_validas]
+				if destino in self.destinos_validos and self.adjacente(sx, sy, x, y):
+					capturou = self.move_peca(origem, destino)
+					self.trata_captura(capturou, destino)
+
+		#se a peça selecionada  anteriormente é uma peça do jogador atual
+		#e a jogada é válida, faz a movimentação
+		elif self.peca_selecionada:
+			sx, sy = self.peca_selecionada
+			origem = (sx, sy)
+			destino = (x, y)
+			if destino in self.destinos_validos and self.adjacente(sx, sy, x, y):
+				capturou = self.move_peca(origem, destino)
+				self.trata_captura(capturou, destino)
+		# print(f"peça selecionada: {self.peca_selecionada}")
 		self.desenha_tabuleiro()
 
-	def trata_captura(self, capturou):
-		if capturou:
-			self.peca_selecionada = (x, y)  # Mantém a peça selecionada
-			self.continua_movimento = True
-			self.att_status(f"Captura! {self.jogador_atual} pode mover novamente.")
-		else:
-			self.peca_selecionada = None
-			self.continua_movimento = False
-			self.troca_jogador()
-			self.att_status(f"Fase de movimento - Jogador: {self.jogador_atual}")
-		self.att_cont_pecas()
-
-	def mover_peca(self, origem, destino):
+	def move_peca(self, origem, destino):
 		x1, y1 = origem
 		x2, y2 = destino
 		jogador = self.tabuleiro[y1][x1]
@@ -198,96 +224,122 @@ class SeegaGame:
 		self.tabuleiro[y2][x2] = jogador
 		return self.checa_captura(destino)
 
-	def get_origens_obrigatorias(self, jogador):
-		origens = []
-		for y in range(TAMANHO):
-			for x in range(TAMANHO):
-				if self.tabuleiro[y][x] == self.jogador_atual and self.pode_capturar(x, y, self.jogador_atual):
-					origens.append((x,y))
-		return origens
+	def trata_captura(self, capturou, destino):
+		x, y = destino
+		if capturou:
+			self.peca_selecionada = (x, y)  # Mantém a peça selecionada
+			self.continua_movimento = True
+			self.att_status(f"Captura! {self.jogador_atual} pode mover novamente.")
+		else:
+			self.peca_selecionada = None
+			self.continua_movimento = False
+			self.destinos_validos = []
+			self.troca_jogador()
+			self.att_status(f"Fase de movimento - Jogador: {self.jogador_atual}")
+		self.att_cont_pecas()
 
-	def get_jogadas_obrigatorias(self, jogador):
+#coletores
+	def get_jogadas_obrigatorias(self):
 		#verifica se, das jogadas disponíveis, quais resultam em captura
+		#retorna uma lista de jogadas obrigatórias em formato [((Xor,Yor),(Xdest,Ydest))]
+		#ex: jogadas = [((3,2),(2,2)),((2,3),(2,2))]
+
 		jogadas = []
+		jogadas.clear()
+		self.origens_destacadas = []
+		# if self.continua_movimento:
+		# 	x, y = self.peca_selecionada
+		# 	for destino in self.get_destinos_validos(x, y):
+		# 		if self.eh_captura(destino):
+		# 			self.origens_destacadas = self.peca_selecionada
+		# 			jogadas.append((self.peca_selecionada, destino))
+		# else:
 		for x in range(TAMANHO):
 			for y in range(TAMANHO):
-				if self.tabuleiro[y][x] == jogador:
-					# print((x,y))
-					for destino in self.get_movimentos_validos(x, y):
-						if self.eh_captura((x, y), destino, jogador):
+				if self.tabuleiro[y][x] == self.jogador_atual:
+					for destino in self.get_destinos_validos(x, y):
+						if self.eh_captura(destino):
+							self.origens_destacadas.append((x,y))
 							jogadas.append(((x, y), destino))
 		return jogadas
 
-	def get_movimentos_validos(self, x, y):
+	def get_jogadas_disponiveis(self):
+		#retorna uma lista de jogadas disponíveis em formato [((Xor,Yor),(Xdest,Ydest))]
+		#ex: jogadas = (3,2) para (2,2) e (2,3) para (2,2) = [((3,2),(2,2)),((2,3),(2,2))]
+		jogadas = []
+		jogadas.clear()
+		for x in range(TAMANHO):
+			for y in range(TAMANHO):
+				if self.tabuleiro[y][x] == self.jogador_atual:
+					for destino in self.get_destinos_validos(x, y):
+						jogadas.append(((x, y), destino))
+		return jogadas
+
+	def get_destinos_validos(self, x, y):
+		#verifica se um destino para uma peça está disponível
+		#retorna uma lista de destinos no formato [(x,y)]
+		#ex: movimentos = [(2,2),(0,1)]
 		movimentos = []
 		for dx, dy in [(-1,0), (1,0), (0,-1), (0,1)]: #esquerda direita cima baixo
 			nx, ny = x + dx, y + dy
-			if self.valido(nx, ny) and self.tabuleiro[ny][nx] is None:
+			if self.eh_valido(nx, ny) and self.tabuleiro[ny][nx] is None:
 				movimentos.append((nx,ny))
-		# print(f"posição {(x,y)}, movimentos: {movimentos}")
 		return movimentos
 
-	def eh_captura(self, origem, destino, jogador):
-		adversario = JOGADOR2 if jogador == JOGADOR1 else JOGADOR1
+#checadores
+	def eh_valido(self, x, y):
+		#checa se está dentro do limite do tabuleiro
+		return 0 <= x < TAMANHO and 0 <= y < TAMANHO
+
+	def eh_captura(self, destino):
+		oponente = JOGADOR2 if self.jogador_atual == JOGADOR1 else JOGADOR1
 		x_dest, y_dest = destino
-		return self.pode_capturar(x_dest, y_dest, jogador)
+		return self.pode_capturar(x_dest, y_dest)
+
+	def pode_capturar(self, x, y):
+		oponente = JOGADOR2 if self.jogador_atual == JOGADOR1 else JOGADOR1
+		direcoes = [(-1,0),(1,0),(0,-1),(0,1)] #cima baixo esquerda direita
+		for dx, dy in direcoes:
+			nx1, ny1 = x + dx, y + dy
+			nx2, ny2 = x + 2*dx, y + 2*dy
+			if self.eh_valido(nx1, ny1) and self.tabuleiro[ny1][nx1] == oponente:
+				if self.eh_valido(nx2, ny2) and self.tabuleiro[ny2][nx2] == self.jogador_atual:
+					return True
+		return False
+
+	def checa_captura(self, destino):
+		x, y = destino
+		capturou = False
+		oponente = JOGADOR1 if self.jogador_atual == JOGADOR2 else JOGADOR2
+		direcoes = [(-1,0), (1,0), (0,-1), (0,1)]
+
+		for dx, dy in direcoes:
+			nx1, ny1 = x + dx, y + dy
+			nx2, ny2 = x + 2*dx, y + 2*dy
+			if self.eh_valido(nx2, ny2):
+				if self.tabuleiro[ny1][nx1] == oponente and self.tabuleiro[ny2][nx2] == self.jogador_atual:
+					self.tabuleiro[ny1][nx1] = None
+					capturou = True
+					self.qtd_pecas_jogador_capturou[self.jogador_atual]+=1
+		return capturou
 
 	def adjacente(self, x1, y1, x2, y2):
 		return abs(x1 - x2) + abs(y1 - y2) == 1
 
-	def troca_jogador(self):
-		self.jogador_atual = JOGADOR1 if self.jogador_atual == JOGADOR2 else JOGADOR2
-		self.selecionado = None
-		self.continua_movimento = False
-		self.origens_destacadas = self.origens_c_capturas_disp()
-		# self.atualizar_label_turno()
-
-	def checa_captura(self, x, y):
-		capturou = False
-		oponente = JOGADOR1 if self.jogador_atual == JOGADOR2 else JOGADOR2
-		directions = [(-1,0), (1,0), (0,-1), (0,1)]
-
-		for dx, dy in directions:
-			nx1, ny1 = x + dx, y + dy
-			nx2, ny2 = x + 2*dx, y + 2*dy
-			if self.valido(nx2, ny2):
-				if self.tabuleiro[ny1][nx1] == oponente and self.tabuleiro[ny2][nx2] == self.jogador_atual:
-					self.tabuleiro[ny1][nx1] = None
-					# self.botoes[ny1][nx1].config(text="")
-					capturou = True
-					self.capturou[self.jogador_atual]+=1
-		return capturou
-
-	def valido(self, x, y):
-		return 0 <= x < TAMANHO and 0 <= y < TAMANHO
-
-	def att_cont_pecas(self):
-		#faz a contagem de todas as peças do tabuleiro e a quem pertencem
-		p1 = sum(row.count(JOGADOR1) for row in self.tabuleiro)
-		p2 = sum(row.count(JOGADOR2) for row in self.tabuleiro)
-		if(self.fase=="posicionamento"): #peças restantes a serem colocadas
-			self.label_cont_pecas.config(text=f"Peças restantes - X: {PECAS_TOTAIS-p1} | O: {PECAS_TOTAIS-p2}")
-		else: #peças restantes do jogador
-			self.label_cont_pecas.config(text=f"Peças restantes - X: {p1} | O: {p2}")
-
-		#sempre que houver uma atualização do tabuleiro, há a checagem de vitória
-		if self.fase == "movimento":
-			self.checa_vitoria(p1, p2)
-
 	def checa_vitoria(self, p1, p2):
 		peq_vitoria, vencedor = self.pequena_vitoria()
 		if p2 == 0: #Jogador 1 capturou todas as peças
-			# self.desabilita()
+			self.bloqueia = True
 			self.popup_game_over(f"Jogador {JOGADOR1} venceu!")
 		elif p1 == 0: #Jogador 2 capturou todas as peças
-			# self.desabilita()
+			self.bloqueia = True
 			self.popup_game_over(f"Jogador {JOGADOR2} venceu!")
 		elif not self.tem_movimentos(self.jogador_atual): #Vitória por bloqueio
 			vencedor = JOGADOR1 if self.jogador_atual == JOGADOR2 else JOGADOR2
-			# self.desabilita()
+			self.bloqueia = True
 			self.popup_game_over(f"Jogador {vencedor} venceu! ({self.jogador_atual} sem movimentos)")
 		elif peq_vitoria:
-			# self.desabilita()
+			self.bloqueia = True
 			self.popup_game_over(f"Jogador {vencedor} venceu! (pequena vitória)")
 
 	def pequena_vitoria(self):
@@ -321,70 +373,35 @@ class SeegaGame:
 				if self.tabuleiro[y][x] == JOGADOR:
 					for dx, dy in [(-1,0), (1,0), (0,-1), (0,1)]:
 						nx, ny = x + dx, y + dy
-						if self.valido(nx, ny) and self.tabuleiro[ny][nx] is None:
+						if self.eh_valido(nx, ny) and self.tabuleiro[ny][nx] is None:
 							return True
 		return False
 
-	def capturas_possiveis(self):
-		for y in range(TAMANHO):
-			for x in range(TAMANHO):
-				jogador = self.tabuleiro[y][x]
-				if jogador in (JOGADOR1, JOGADOR2) and self.pode_capturar(x,y,jogador):
-					return True
-		return False
+#atualizadores
+	def att_status(self, message):
+		self.label_status.config(text=message)
 
-	def pode_capturar(self, x, y, jogador):
-		oponente = JOGADOR1 if jogador == JOGADOR2 else JOGADOR2
-		direcoes = [(-1,0),(1,0),(0,-1),(0,1)] #cima baixo esquerda direita
-		for dx, dy in direcoes:
-			nx1, ny1 = x + dx, y + dy
-			nx2, ny2 = x + 2*dx, y + 2*dy
-			if self.valido(nx2, ny2):
-				if self.tabuleiro[ny1][nx1] == oponente and self.tabuleiro[ny2][nx2] == jogador:
-					# print("pode capturar")
-					return True
-		# print("não pode capturar")
-		return False
+	def att_cont_pecas(self):
+		#faz a contagem de todas as peças do tabuleiro e a quem pertencem
+		p1 = sum(row.count(JOGADOR1) for row in self.tabuleiro)
+		p2 = sum(row.count(JOGADOR2) for row in self.tabuleiro)
 
-	def highlight_captura(self):
-		self.origens_destacadas = self.get_origens_obrigatorias(self.jogador_atual)
-		# print(f"origens destacadas: {self.origens_destacadas}")
-		for x, y in self.origens_destacadas:
-			x1, y1 = x * TAMANHO_CASA, y * TAMANHO_CASA
-			x2, y2 = x1 + TAMANHO_CASA, y1 + TAMANHO_CASA
-			self.canvas.create_oval(x1+5, y1+5, x2-5, y2-5, outline=COR_DESTAQUE, width=3)
+		#peças restantes a serem colocadas
+		if self.fase_posicionamento:
+			self.label_cont_pecas.config(text=f"Peças restantes - {JOGADOR1}: {PECAS_TOTAIS-p1} | {JOGADOR2}: {PECAS_TOTAIS-p2}")
+		#peças restantes do jogador
+		else:
+			self.label_cont_pecas.config(text=f"Peças restantes - {JOGADOR1}: {p1} | {JOGADOR2}: {p2}")
+			#sempre que houver uma atualização do tabuleiro, há a checagem de vitória
+			self.checa_vitoria(p1, p2)
 
-	def handle_selecao(self, x, y):
-		if self.fase != "movement":
-			return
+	def troca_jogador(self):
+		self.jogador_atual = JOGADOR1 if self.jogador_atual == JOGADOR2 else JOGADOR2
+		self.peca_selecionada = None
+		self.continua_movimento = False
+		# self.origens_destacadas = self.origens_c_capturas_disp()
 
-		if self.tabuleiro[y][x] != self.jogador_atual:
-			return  # só pode selecionar sua própria peça
-
-		if self.captura_disponivel():
-			# Existem capturas obrigatórias
-			if not self.pode_capturar(x, y, self.jogador_atual):
-				return  # Não pode selecionar uma peça que não captura
-
-	def origens_c_capturas_disp(self):
-		origens = []
-		for y in range(5):
-			for x in range(5):
-				if self.tabuleiro[y][x] == self.jogador_atual:
-					if self.pode_capturar(x, y, self.jogador_atual):
-						origens.append((x,y))
-		return origens
-
-	# def desabilita(self):
-	# 	for row in self.botoes:
-	# 		for btn in row:
-	# 			btn.config(state="disabled")
-
-	# def habilita(self):
-	# 	for row in self.botoes:
-	# 		for btn in row:
-	# 			btn.config(state="normal")
-
+#final do jogo
 	def desistencia(self):
 		#TODO Rever esse trecho de código depois
 		#(o botão de desistência considera o jogador atual como
@@ -393,17 +410,17 @@ class SeegaGame:
 		if confirma == "yes":
 			vencedor = JOGADOR1 if self.jogador_atual == JOGADOR2 else JOGADOR2
 			self.att_status(f"Jogador {vencedor} venceu por desistência!")
-			self.desabilita()
 			self.popup_game_over(f"Jogador {vencedor} venceu por desistência!")
 
 	def encerra_jogo(self):
+		#TODO a mensagem de confirmação vai para o outro jogador
 		confirma = tkmsg.askquestion("Encerrar jogo", "Você tem certeza que deseja encerrar o jogo?")
 		if confirma == "yes":
-			j1_capturas = self.capturou[JOGADOR1]
-			j2_capturas = self.capturou[JOGADOR2]
-			if j1_capturas > j2_capturas:
+			j1 = self.qtd_pecas_jogador_capturou[JOGADOR1]
+			j2 = self.qtd_pecas_jogador_capturou[JOGADOR2]
+			if j1 > j2:
 				vencedor = JOGADOR1
-			elif j2_capturas > j1_capturas:
+			elif j2 > j1:
 				vencedor = JOGADOR2
 			else:
 				self.popup_game_over("Empate (mesmo número de peças capturadas)!")
@@ -411,11 +428,16 @@ class SeegaGame:
 			self.popup_game_over(f"Jogador {vencedor} venceu (grande vitória)!")
 
 	def popup_game_over(self, mensagem):
-		# tkmsg.showinfo("Fim de Jogo", mensagem)
 		if tkmsg.askyesno("Reiniciar", f"{mensagem} Deseja jogar novamente?"):
 			self.reinicia_jogo()
 		else:
 			self.root.destroy()
+
+	def reinicia_jogo(self):
+		self.set_jogo((JOGADOR1, JOGADOR2))
+		self.att_status(f"Fase de colocação - Jogador: {self.jogador_atual}")
+		self.att_cont_pecas()
+		self.desenha_tabuleiro()
 
 if __name__ == "__main__":
 	root = tk.Tk()
