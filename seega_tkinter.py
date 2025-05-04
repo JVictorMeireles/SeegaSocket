@@ -1,8 +1,9 @@
-# import socket
+import socket
 import tkinter as tk
 import tkinter.messagebox as tkmsg
 import random as rd
 import numpy as np
+import threading
 
 # Constantes
 TAMANHO = 5
@@ -10,6 +11,8 @@ TAMANHO_CASA = 60
 JOGADOR1 = "Verde"
 JOGADOR2 = "Roxo"
 PECAS_TOTAIS = 12
+HOST = "localhost"
+PORT = 12345
 
 # Cores
 COR_TABULEIRO = "#DDB88C"
@@ -18,11 +21,6 @@ COR_PECAS = {JOGADOR1: "green", JOGADOR2: "purple"}
 COR_P1 = "green"
 COR_P2 = "purple"
 COR_DESTAQUE = "yellow"
-
-#ao terminar a fase de posicionamento, o tabuleiro verifica se há alguma peça
-#com movimentação obrigatória, ou seja, se ela puder fazer um movimento de captura
-#peças com movimentação obrigatória devem ser destacadas
-#ao clicar em uma peça, serão exibidos os movimentos possíveis
 
 class SeegaGame:
 #funções de setup/interface
@@ -37,6 +35,7 @@ class SeegaGame:
 		#funções de inicialização do jogo
 		self.set_jogo(jogadores)
 		self.cria_widgets(root)
+		self.chat = Chat(root)
 
 	def set_jogo(self,jogadores): #inicializa o jogo
 		#inicializa o tabuleiro 5x5 vazio
@@ -60,7 +59,8 @@ class SeegaGame:
 		width = TAMANHO*TAMANHO_CASA
 		height = TAMANHO*TAMANHO_CASA
 		self.canvas = tk.Canvas(root, width=width, height=height)
-		self.canvas.pack()
+		self.canvas.pack(side='left', padx=5, pady=5)
+		self.canvas.config(bg=COR_TABULEIRO)
 		#associa a ação de clique com a função
 		self.canvas.bind("<Button-1>", self.clique)
 
@@ -75,7 +75,6 @@ class SeegaGame:
 		self.label_cont_pecas.pack()
 		self.att_cont_pecas()
 
-		#TODO arranjar alguma forma de colocar os botões lado a lado
 		#botão de desistência
 		self.bt_desistencia = tk.Button(root, text="Desistir", command=self.desistencia)
 		self.bt_desistencia.pack()
@@ -84,7 +83,50 @@ class SeegaGame:
 		self.bt_encerrar_jogo = tk.Button(root, text="Encerrar", command=self.encerra_jogo)
 		self.bt_encerrar_jogo.pack()
 
-		#função de chat aqui
+		#função de chat
+		self.chat_frame = tk.Frame(root)
+		self.chat_frame.pack(side='right', padx=5, pady=5)
+
+		#conexão com o servidor
+		self.cria_conexao_socket()
+
+	def cria_conexao_socket(self):
+		try:
+			cliente = Cliente(HOST,	PORT)
+			cliente.start()
+		except ConnectionRefusedError:
+			servidor = Servidor(HOST, PORT)
+			servidor.start()
+
+	def aguarda_conexao(self):
+		# Aguarda a conexão de um cliente
+		self.conexao, self.endereco_conectado = self.socket.accept()
+		print(f"Conexão estabelecida com {self.endereco_conectado}")
+
+		# Inicia uma thread para receber mensagens do cliente
+		self.thread_receber = threading.Thread(target=self.receber_mensagens, daemon=True)
+		self.thread_receber.start()
+
+	def receber_mensagens(self):
+		while True:
+			try:
+				# Recebe dados do cliente
+				dados = self.conexao.recv(1024)
+				if not dados:
+					break
+				mensagem = dados.decode()
+				# Processa os dados recebidos (exibe no console)
+				print(f"Recebido: {dados.decode()}")
+			except Exception as e:
+				print(f"Erro ao receber dados: {e}")
+				break
+
+	def enviar_mensagem(self, mensagem: str):
+		if self.conexao:
+			try:
+				self.conexao.sendall(mensagem.encode())
+			except Exception as e:
+				print(f"Erro ao enviar mensagem: {e}")
 
 	def desenha_tabuleiro(self):
 		self.canvas.delete("all") #limpa o tabuleiro
@@ -93,7 +135,7 @@ class SeegaGame:
 			for y in range(TAMANHO):
 				x1, y1 = x * TAMANHO_CASA, y * TAMANHO_CASA
 				x2, y2 = x1 + TAMANHO_CASA, y1 + TAMANHO_CASA
-				self.canvas.create_rectangle(x1, y1, x2, y2, fill=COR_TABULEIRO, outline=COR_LINHA)
+				self.canvas.create_rectangle(x1, y1, x2, y2, outline=COR_LINHA)#, fill=COR_TABULEIRO)
 
 				peca = self.tabuleiro[y][x]
 				#desenha as peças
@@ -108,14 +150,14 @@ class SeegaGame:
 			if not self.continua_movimento and jogadas_obrigatorias:
 				for x,y in self.origens_destacadas:
 					self.highlight_peca((x,y))
-				for (x, y) in self.destinos_validos: #destaca movimentos válidos (TODO verificar)
+				for (x, y) in self.destinos_validos: #destaca movimentos válidos
 					x1, y1 = x * TAMANHO_CASA + 20, y * TAMANHO_CASA + 20
 					x2, y2 = x1 + 20, y1 + 20
 					self.canvas.create_oval(x1, y1, x2, y2, fill="black")
 			elif not jogadas_obrigatorias and self.peca_selecionada or self.continua_movimento and not jogadas_obrigatorias_peca:
 				self.highlight_peca(self.peca_selecionada)
 				(xori, yori) = self.peca_selecionada
-				for (x, y) in self.get_destinos_validos(xori, yori): #destaca movimentos válidos (TODO verificar)
+				for (x, y) in self.get_destinos_validos(xori, yori): #destaca movimentos válidos
 					x1, y1 = x * TAMANHO_CASA + 20, y * TAMANHO_CASA + 20
 					x2, y2 = x1 + 20, y1 + 20
 					self.canvas.create_oval(x1, y1, x2, y2, fill="black")
@@ -123,7 +165,7 @@ class SeegaGame:
 				self.highlight_peca(self.peca_selecionada)
 				(xori, yori) = self.peca_selecionada
 				destinos_obrigatorios = [dest for _, dest in jogadas_obrigatorias_peca if _ == self.peca_selecionada]
-				for (x, y) in destinos_obrigatorios: #destaca movimentos válidos (TODO verificar)
+				for (x, y) in destinos_obrigatorios: #destaca movimentos válidos
 					x1, y1 = x * TAMANHO_CASA + 20, y * TAMANHO_CASA + 20
 					x2, y2 = x1 + 20, y1 + 20
 					self.canvas.create_oval(x1, y1, x2, y2, fill="black")
@@ -143,7 +185,7 @@ class SeegaGame:
 			if self.fase_posicionamento:
 				self.handle_posicionamento(x, y)
 			else:
-				self.handle_movimento(x, y) #TODO!!!!!!!!!!!!!!!!!!!!
+				self.handle_movimento(x, y)
 
 	def handle_posicionamento(self, x, y):
 		#ao clicar, verifica se a casa está vazia e não é a do meio
@@ -166,7 +208,6 @@ class SeegaGame:
 			self.att_cont_pecas()
 			self.desenha_tabuleiro()
 
-#aparentemente só falta descobrir como fazer com que a peça que capturou continue selecionada
 	def handle_movimento(self, x, y):
 		jogadas_obrigatorias = self.get_jogadas_obrigatorias()
 		jogadas_disponiveis = self.get_jogadas_disponiveis()
@@ -188,16 +229,13 @@ class SeegaGame:
 		elif self.continua_movimento and self.tabuleiro[y][x] == None:
 			jogadas_obrigatorias_peca = [j for j in jogadas_obrigatorias if j[0] == self.peca_selecionada]
 			if jogadas_obrigatorias_peca:
-				print("jogadas obrigatórias")
 				jogadas_validas = jogadas_obrigatorias_peca
 			else:
-				print("jogadas disponíveis")
 				jogadas_validas = [j for j in jogadas_disponiveis if j[0] == self.peca_selecionada]
 			sx, sy = self.peca_selecionada
 			origem = (sx, sy)
 			destino = (x, y)
 			if (origem, destino) in jogadas_validas:
-			# if jogadas_validas:
 				self.peca_selecionada = destino
 				self.destinos_validos = [dest for _, dest in jogadas_validas]
 				if destino in self.destinos_validos and self.adjacente(sx, sy, x, y):
@@ -213,7 +251,6 @@ class SeegaGame:
 			if destino in self.destinos_validos and self.adjacente(sx, sy, x, y):
 				capturou = self.move_peca(origem, destino)
 				self.trata_captura(capturou, destino)
-		# print(f"peça selecionada: {self.peca_selecionada}")
 		self.desenha_tabuleiro()
 
 	def move_peca(self, origem, destino):
@@ -247,13 +284,6 @@ class SeegaGame:
 		jogadas = []
 		jogadas.clear()
 		self.origens_destacadas = []
-		# if self.continua_movimento:
-		# 	x, y = self.peca_selecionada
-		# 	for destino in self.get_destinos_validos(x, y):
-		# 		if self.eh_captura(destino):
-		# 			self.origens_destacadas = self.peca_selecionada
-		# 			jogadas.append((self.peca_selecionada, destino))
-		# else:
 		for x in range(TAMANHO):
 			for y in range(TAMANHO):
 				if self.tabuleiro[y][x] == self.jogador_atual:
@@ -399,7 +429,7 @@ class SeegaGame:
 		self.jogador_atual = JOGADOR1 if self.jogador_atual == JOGADOR2 else JOGADOR2
 		self.peca_selecionada = None
 		self.continua_movimento = False
-		# self.origens_destacadas = self.origens_c_capturas_disp()
+		#envia a mensagem de troca de jogador para o servidor
 
 #final do jogo
 	def desistencia(self):
@@ -439,8 +469,168 @@ class SeegaGame:
 		self.att_cont_pecas()
 		self.desenha_tabuleiro()
 
+class Chat:
+	#TODO implementar o chat
+	def __init__(self, root):
+		self.root = root
+		self.chat_frame = tk.Frame(root)
+		self.chat_frame.pack()
+
+		self.chat_text = tk.Text(self.chat_frame, width=50, height=10, state='disabled')
+		self.chat_text.pack()
+
+		self.chat_entry = tk.Entry(self.chat_frame, width=50)
+		self.chat_entry.bind("<Return>", self.enviar_mensagem)
+		self.chat_entry.pack()
+
+		self.send_button = tk.Button(self.chat_frame, text="Enviar", command=self.enviar_mensagem)
+		self.send_button.pack()
+
+	def desenha_chat(self):
+		#área de mensagens
+		self.chat_text = tk.Text(self.chat_frame, width=50, height=10)
+		self.chat_text.pack()
+
+		#desenha um retângulo para a entrada de mensagens
+		self.chat_entry = tk.Entry(self.chat_frame, width=50)
+
+	def enviar_mensagem(self, event=None):
+		mensagem = self.chat_entry.get()
+		if mensagem.strip():
+			self.chat_text.config(state='normal')
+			self.chat_text.insert(tk.END, f"Você: {mensagem}\n")
+			self.chat_text.config(state='disabled')
+			self.chat_text.see(tk.END)
+			self.chat_entry.delete(0, tk.END)
+
+class Cliente(threading.Thread):
+	def __init__(self, host, port):
+		self.host = host
+		self.port = port
+		self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+		self.name = None #TODO definir o nome do jogador
+		self.messages = None
+
+	def iniciar(self):
+		self.sock.connect((self.host, self.port))
+		print(f"Conectado ao servidor {self.host}:{self.port}")
+
+		# Inicia a thread de envio de mensagens
+		enviar = Envia(self.sock, self.host, self.port)
+		enviar.start()
+
+		# Inicia a thread de recebimento de mensagens
+		receber = Recebe(self.sock, self.name)
+		receber.start()
+		return receber
+
+class Envia(threading.Thread):
+	def __init__(self, sock, host, port):
+		super().__init__()
+		self.sock = sock
+		self.host = host
+		self.port = port
+
+	def run(self):
+		while True:
+			mensagem = input("Digite sua mensagem: ")
+			if mensagem.lower() == "sair":
+				break
+			self.sock.sendall(mensagem.encode())
+		self.sock.close()
+
+class Recebe(threading.Thread):
+	def __init__(self, sock, name):
+		super().__init__()
+		self.sock = sock
+		self.name = name
+		self.messages = None
+
+	def run(self):
+		while True:
+			mensagem = self.sock.recv(1024).decode('utf-8')
+			if not mensagem:
+				break
+			print(f"{nome}: {mensagem}")
+		self.sock.close()
+
+class Servidor(threading.Thread):
+	def __init__(self, host, port):
+		super().__init__()
+		self.conexao = None
+		self.host = host
+		self.port = port
+
+	def run(self):
+		sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+		sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+		sock.bind((self.host, self.port))
+
+		sock.listen(1)
+		print(f"Servidor rodando em {self.host}:{self.port}")
+		while True:
+			conexao, endereco = sock.accept()
+			print(f"Conexão estabelecida com {endereco}")
+
+			#cria um thread para tratar o cliente
+			server_socket = ServerSocket(conexao, endereco, self)
+			#inicia uma thread para receber mensagens do cliente
+			server_socket.start()
+			#adiciona o thread à lista de conexões
+			self.connections = server_socket
+
+	def broadcast(self, mensagem, origem):
+		for connection in self.connections:
+			if connection.sockname != origem:
+				connection.send(mensagem)
+
+	def remove_conexao(self, conexao):
+		self.connections.remove(conexao)
+
+class ServerSocket(threading.Thread):
+	def __init__(self, conexao, sockname, servidor):
+		super().__init__()
+		self.conexao = conexao
+		self.sockname = sockname
+		self.servidor = servidor
+
+	def run(self):
+		while True:
+			mensagem = self.conexao.recv(1024).decode('ascii')
+			if mensagem:
+				print(f"{self.sockname} diz: {mensagem}")
+				self.servidor.broadcast(mensagem, self.sockname)
+			else:
+				print(f"{self.sockname} fechou a conexão")
+				self.conexao.close()
+				self.servidor.remove_conexao(self)
+				return
+
+	def enviar(self, mensagem):
+		if self.conexao:
+			try:
+				self.conexao.sendall(mensagem.encode())
+			except Exception as e:
+				print(f"Erro ao enviar mensagem: {e}")
+
+def sair(servidor):
+	while True:
+		comando = input("Digite 'sair' para encerrar o servidor: ")
+		if comando.lower() == "sair":
+			servidor.conexao.close()
+			break
+
 if __name__ == "__main__":
 	root = tk.Tk()
 	root.title("Seega")
 	game = SeegaGame(root)
 	root.mainloop()
+
+	parser = argparse.ArgumentParser(description="Chatroom Server")
+	parser.add_argument("host", help="Interface the server listens to")
+	parser.add_argument("-p", metavar='PORT', type=int, default=12345, help="TCP port (default: 12345)")
+
+	args = parser.parse_args()
+
+	exit = threading.Thread(target=exit, args=(server,))
+	exit.start()
