@@ -34,11 +34,8 @@ class JogoSeega:
 		tipo_conexao = "Servidor" if self.rede.is_servidor else "Cliente"
 		self.root.title("Seega de " + tipo_conexao)
 
-		self.quer_desistencia,self.quer_encerrar = None, None
+		self.quer_desistencia = None
 		self.mensagens_chat = []
-
-		# self.rodadas = 0
-		# self.pos_anterior
 
 		jogadores = [JOGADOR1, JOGADOR2]
 
@@ -46,7 +43,6 @@ class JogoSeega:
 		self.set_jogo(jogadores)
 		self.cria_widgets(self.root)
 
-		# if self.rede.is_servidor:
 		self.bloquear_botoes_tabuleiro()
 		self.root.mainloop()
 
@@ -56,8 +52,8 @@ class JogoSeega:
 
 		self.bloqueia = False
 		self.fase_posicionamento = True
-		self.jogador_servidor = JOGADOR1 #rd.choice(jogadores)
-		self.jogador_cliente = JOGADOR2 #JOGADOR1 if self.jogador_servidor == JOGADOR2 else JOGADOR2
+		self.jogador_servidor = JOGADOR1
+		self.jogador_cliente = JOGADOR2
 		self.jogador_atual = self.jogador_servidor
 		self.jogo_parado = False
 
@@ -117,13 +113,9 @@ class JogoSeega:
 			["Desistir", self.desistencia],
 			["Encerrar", self.encerra_jogo],
 		]
-		# self.frame_inferior = tk.Frame(self.canvas)
-		# self.frame_inferior.pack(pady=10)
-		# i = 0
 		for texto, comando in bt:
 			botao = tk.Button(self.root, text=texto, command=comando)
 			botao.pack(side='left', padx=5)
-			# i+=1
 
 	def desenha_tabuleiro(self):
 		self.canvas.delete("all") #limpa o tabuleiro
@@ -132,7 +124,7 @@ class JogoSeega:
 			for y in range(TAMANHO):
 				x1, y1 = x * TAMANHO_CASA, y * TAMANHO_CASA
 				x2, y2 = x1 + TAMANHO_CASA, y1 + TAMANHO_CASA
-				self.canvas.create_rectangle(x1, y1, x2, y2, outline=COR_LINHA)#, fill=COR_TABULEIRO)
+				self.canvas.create_rectangle(x1, y1, x2, y2, outline=COR_LINHA)
 
 				peca = self.tabuleiro[y][x]
 				#desenha as peças
@@ -368,19 +360,23 @@ class JogoSeega:
 		if capturas_j1 == PECAS_TOTAIS: #Jogador 1 capturou todas as peças
 			self.bloqueia = True
 			vencedor = JOGADOR1
+			self.enviar_estado_do_jogo(vencedor=vencedor)
 			self.popup_game_over(f"Jogador {vencedor} venceu por capturar todas as peças do oponente!")
 		elif capturas_j2 == PECAS_TOTAIS: #Jogador 2 capturou todas as peças
 			self.bloqueia = True
 			vencedor = JOGADOR2
+			self.enviar_estado_do_jogo(vencedor=vencedor)
 			self.popup_game_over(f"Jogador {vencedor} venceu por capturar todas as peças do oponente!")
 		elif not self.tem_movimentos(self.jogador_atual) and not self.fase_posicionamento: #Vitória por bloqueio
 			vencedor = JOGADOR1 if self.jogador_atual == JOGADOR2 else JOGADOR2
+			self.enviar_estado_do_jogo(vencedor=vencedor)
 			self.bloqueia = True
 			self.popup_game_over(f"Jogador {vencedor} venceu! ({self.jogador_atual} sem movimentos)")
 		elif peq_vitoria:
 			self.bloqueia = True
+			self.enviar_estado_do_jogo(vencedor=vencedor)
 			self.popup_game_over(f"Jogador {vencedor} venceu! (pequena vitória)")
-		elif encerrar_jogo:
+		elif encerrar_jogo == True:
 			self.bloqueia = True
 			if capturas_j1 > capturas_j2:
 				vencedor = JOGADOR1
@@ -389,6 +385,7 @@ class JogoSeega:
 			else:
 				self.popup_game_over("Empate (mesmo número de peças capturadas)!")
 				return
+			self.enviar_estado_do_jogo(vencedor=vencedor)
 			self.popup_game_over(f"Jogador {vencedor} venceu por capturar mais que o oponente!")
 
 	def pequena_vitoria(self):
@@ -494,7 +491,8 @@ class JogoSeega:
 		mensagem_chat_para_enviar = None,
 		desligar = False,
 		reiniciar = False,
-		fase_movimento = False
+		fase_movimento = False,
+		vencedor = None
 		):
 		# Envia o estado do jogo para o outro jogador
 		mensagem_para_enviar = json.dumps({
@@ -506,17 +504,13 @@ class JogoSeega:
 			"mensagem_chat": mensagem_chat_para_enviar,
 			"desligar": desligar,
 			"reiniciar": reiniciar,
-			"fase_movimento": fase_movimento
+			"fase_movimento": fase_movimento,
+			"vencedor": vencedor
 		})
 		self.rede.enviar(mensagem_para_enviar)
 
 	def att_jogo_com_dados(self, dados):
 		dados = json.loads(dados)
-
-		# for widget in self.frame_inferior.winfo_children():
-		# 	if isinstance(widget, tk.Button):
-		# 		widget.config(state='disabled')
-
 		#atualiza o estado do jogo com base nos dados recebidos
 		self.tabuleiro = dados["tabuleiro"]
 		self.jogador_atual = dados["jogador_atual"]
@@ -531,25 +525,21 @@ class JogoSeega:
 		if dados["desistencia"] == True:
 			self.checa_vitoria(adversario_desiste = True)
 		if dados["encerra_jogo"] == True:
-			self.quer_encerrar = True if tkmsg.askquestion("Encerrar jogo", f"{oponente} quer encerrar o jogo. Aceitar?") == 'yes' else False
-			if self.quer_encerrar:
-				self.att_jogo(enviar=False)
-				self.enviar_estado_do_jogo(encerrar_jogo=self.quer_encerrar)
-				self.checa_vitoria(encerrar_jogo=True)
-			else:
-				self.att_status(f"Fase de movimento - Jogador: {self.jogador_atual}")
+			quer_encerrar = True if tkmsg.askquestion("Encerrar jogo", f"{oponente} quer encerrar o jogo. Aceitar?") == 'yes' else False
+			if quer_encerrar:
+				self.enviar_estado_do_jogo(desligar=True)
+				self.att_status("Encerrando o jogo...")
+				time.sleep(5)
+				self.root.destroy()
 		if dados["desligar"] == True:
 			self.att_status("Encerrando o jogo...")
 			time.sleep(5)
 			self.root.destroy()
 		if dados["fase_movimento"] == True:
 			self.fase_posicionamento = False
-		# for widget in self.frame_inferior.winfo_children():
-		# 	if isinstance(widget, tk.Button):
-		# 		if self.jogo_parado and widget['text']=='Pedir para reiniciar o jogo':
-		# 			widget.config(state="normal")
-		# 		elif not self.jogo_parado:
-		# 			widget.config(state="normal")
+		if dados["vencedor"]:
+			mensagem = f"{vencedor} venceu!"
+			self.popup_game_over(mensagem)
 		self.att_jogo(enviar=False)
 	
 	def exibir_mensagem_chat(self, mensagem):
@@ -579,12 +569,10 @@ class JogoSeega:
 			self.checa_vitoria(eu_desisto=True)
 
 	def encerra_jogo(self):
-		self.quer_encerrar = True
 		confirma = tkmsg.askquestion("Encerrar jogo", "Você tem certeza que deseja encerrar o jogo?")
 		if confirma == "yes":
-			self.att_jogo(enviar=True)
+			# self.att_jogo(enviar=True)
 			self.enviar_estado_do_jogo(encerrar_jogo=True)
-			self.checa_vitoria(encerrar_jogo=True)
 
 	def popup_game_over(self, mensagem):
 		if tkmsg.askyesno("Reiniciar", f"{mensagem} Deseja jogar novamente?"):
@@ -643,158 +631,6 @@ class GerenciadorSocket:
 			except Exception as e:
 				print(f"Erro ao receber dados: {e}")
 				break
-# class Chat:
-# 	def __init__(self, root):
-# 		self.root = root
-# 		self.chat_frame = tk.Frame(root)
-# 		self.chat_frame.pack()
-
-# 		self.chat_text = tk.Text(self.chat_frame, width=50, height=10, state='disabled')
-# 		self.chat_text.pack()
-
-# 		self.chat_entry = tk.Entry(self.chat_frame, width=50)
-# 		self.chat_entry.bind("<Return>", self.enviar_mensagem_chat)
-# 		self.chat_entry.pack()
-
-# 		self.send_button = tk.Button(self.chat_frame, text="Enviar", command=self.enviar_mensagem_chat)
-# 		self.send_button.pack()
-
-# 	def enviar_mensagem_chat(self, event=None):
-# 		mensagem = self.chat_entry.get()
-# 		if mensagem.strip():
-# 			self.chat_text.config(state='normal')
-# 			self.chat_text.insert(tk.END, f"Você: {mensagem}\n")
-# 			self.chat_text.config(state='disabled')
-# 			self.chat_text.see(tk.END)
-# 			self.chat_entry.delete(0, tk.END)
-
-# class Cliente(threading.Thread):
-# 	def __init__(self, host, port):
-# 		self.host = host
-# 		self.port = port
-# 		self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-# 		self.nome = None #TODO definir o nome do jogador
-# 		self.messages = []
-
-# 	def iniciar(self):
-# 		self.sock.connect((self.host, self.port))
-# 		print(f"Conectado ao servidor {self.host}:{self.port}")
-
-# 		# Inicia a thread de envio de mensagens
-# 		enviar = Envia(self.sock, self.host, self.port)
-# 		enviar.start()
-
-# 		# Inicia a thread de recebimento de mensagens
-# 		receber = Recebe(self.sock, self.nome)
-# 		receber.start()
-# 		return receber
-
-# class Envia(threading.Thread):
-# 	def __init__(self, sock, host, port):
-# 		super().__init__()
-# 		self.sock = sock
-# 		self.host = host
-# 		self.port = port
-
-# 	def run(self):
-# 		while True:
-# 			mensagem = input("Digite sua mensagem: ") #TODO modificar a variavel para receber a mensagem da caixa de chat
-# 			if mensagem.lower() == "sair":
-# 				break
-# 			self.sock.sendall(mensagem.encode())
-# 		self.sock.close()
-
-# class Recebe(threading.Thread):
-# 	def __init__(self, sock, name):
-# 		super().__init__()
-# 		self.sock = sock
-# 		self.name = name
-# 		self.messagens = None
-
-# 	def run(self):
-# 		while True:
-# 			mensagem = self.sock.recv(BUFFER).decode('utf-8') #TODO modificar a variavel para exibir a mensagem na caixa de chat
-# 			if not mensagem:
-# 				break
-# 			print(f"{nome}: {mensagem}")
-# 		self.sock.close()
-
-# class Servidor(threading.Thread):
-# 	def __init__(self, host, port):
-# 		super().__init__()
-# 		self.conexao = [] #lista de conexões ativas
-# 		self.host = host
-# 		self.port = port
-# 		self.nome = None #TODO definir o nome do jogador
-
-# 	def run(self):
-# 		sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-# 		sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-# 		sock.bind((self.host, self.port))
-
-# 		sock.listen(1) #limite de conexões simultâneas
-# 		print(f"Servidor rodando em {self.host}:{self.port}")
-# 		while True:
-# 			conexao, endereco = sock.accept()
-# 			print(f"Conexão estabelecida com {endereco}")
-
-# 			#cria um thread para tratar o cliente
-# 			server_socket = ServerSocket(conexao, endereco, self)
-# 			#inicia uma thread para receber mensagens do cliente
-# 			server_socket.start()
-# 			#adiciona o thread à lista de conexões
-# 			self.connections = server_socket
-
-# 	def broadcast(self, mensagem, origem):
-# 		for connection in self.connections:
-# 			if connection.sockname != origem:
-# 				connection.send(mensagem)
-
-# 	def remove_conexao(self, conexao):
-# 		self.connections.remove(conexao)
-
-# class ServerSocket(threading.Thread):
-# 	def __init__(self, conexao, sockname, servidor):
-# 		super().__init__()
-# 		self.conexao = conexao
-# 		self.sockname = sockname
-# 		self.servidor = servidor
-
-# 	def run(self):
-# 		while True:
-# 			mensagem = self.conexao.recv(BUFFER).decode('ascii')
-# 			if mensagem:
-# 				print(f"{self.sockname} diz: {mensagem}")
-# 				self.servidor.broadcast(mensagem, self.sockname)
-# 			else:
-# 				print(f"{self.sockname} fechou a conexão")
-# 				self.conexao.close()
-# 				self.servidor.remove_conexao(self)
-# 				return
-
-# 	def enviar(self, mensagem):
-# 		if self.conexao:
-# 			try:
-# 				self.conexao.sendall(mensagem.encode())
-# 			except Exception as e:
-# 				print(f"Erro ao enviar mensagem: {e}")
-
-# def sair(servidor):
-# 	while True:
-# 		comando = input("Digite 'sair' para encerrar o servidor: ")
-# 		if comando.lower() == "sair":
-# 			servidor.conexao.close()
-# 			break
 
 if __name__ == "__main__":
 	JogoSeega()
-	
-
-	# parser = argparse.ArgumentParser(description="Chatroom Server")
-	# parser.add_argument("host", help="Interface the server listens to")
-	# parser.add_argument("-p", metavar='PORT', type=int, default=12345, help="TCP port (default: 12345)")
-
-	# args = parser.parse_args()
-
-	# exit = threading.Thread(target=exit, args=(server,))
-	# exit.start()
