@@ -133,7 +133,7 @@ class JogoSeega:
 					self.canvas.create_oval(x1+10, y1+10, x2-10, y2-10, fill=cor)
 		
 		#fase de movimento
-		if not self.fase_posicionamento:
+		if self.fase_posicionamento == False:
 			jogadas_obrigatorias = self.get_jogadas_obrigatorias()
 			jogadas_obrigatorias_peca = [j for j in jogadas_obrigatorias if j[0] == self.peca_selecionada]
 			if not self.continua_movimento and jogadas_obrigatorias:
@@ -171,7 +171,7 @@ class JogoSeega:
 		y = evento.y//TAMANHO_CASA
 
 		if not self.bloqueia:
-			if self.fase_posicionamento:
+			if self.fase_posicionamento == True:
 				self.handle_posicionamento(x, y)
 			else:
 				self.handle_movimento(x, y)
@@ -189,7 +189,7 @@ class JogoSeega:
 			self.pecas_pos_p_turno += 1 #varíavel para posicionar 2 peças por turno
 			if all(qtd == 12 for qtd in self.qtd_pecas_posicionadas.values()):
 				self.fase_posicionamento = False
-				self.enviar_estado_do_jogo(fase_movimento=True)
+				self.enviar_estado_do_jogo(fase_posicionamento=False)
 				self.att_status(f"Fase de movimento - Jogador: {self.jogador_atual}")
 			else:
 				if self.pecas_pos_p_turno == 2:
@@ -367,7 +367,7 @@ class JogoSeega:
 			vencedor = JOGADOR2
 			self.enviar_estado_do_jogo(vencedor=vencedor)
 			self.popup_game_over(f"Jogador {vencedor} venceu por capturar todas as peças do oponente!")
-		elif not self.tem_movimentos(self.jogador_atual) and not self.fase_posicionamento: #Vitória por bloqueio
+		elif self.tem_movimentos(self.jogador_atual) == False and self.fase_posicionamento == False: #Vitória por bloqueio
 			vencedor = JOGADOR1 if self.jogador_atual == JOGADOR2 else JOGADOR2
 			self.enviar_estado_do_jogo(vencedor=vencedor)
 			self.bloqueia = True
@@ -434,10 +434,12 @@ class JogoSeega:
 		p2 = sum(row.count(JOGADOR2) for row in self.tabuleiro)
 
 		#peças restantes a serem colocadas
-		if self.fase_posicionamento:
+		if self.fase_posicionamento == True:
+			self.qtd_pecas_posicionadas[JOGADOR1], self.qtd_pecas_posicionadas[JOGADOR2] = p1, p2
 			self.label_cont_pecas.config(text=f"Peças restantes - {JOGADOR1}: {PECAS_TOTAIS-p1} | {JOGADOR2}: {PECAS_TOTAIS-p2}")
 		#peças restantes do jogador
-		else:
+		elif self.fase_posicionamento == False:
+			self.qtd_pecas_jogador_capturou[JOGADOR1], self.qtd_pecas_jogador_capturou[JOGADOR2] = PECAS_TOTAIS-p1, PECAS_TOTAIS-p2
 			self.label_cont_pecas.config(text=f"Peças restantes - {JOGADOR1}: {p1} | {JOGADOR2}: {p2}")
 			#sempre que houver uma atualização do tabuleiro, há a checagem de vitória
 			self.checa_vitoria()
@@ -462,19 +464,14 @@ class JogoSeega:
 			libera_cliente = self.jogador_cliente == self.jogador_atual and not self.rede.is_servidor
 			if libera_servidor or libera_cliente:
 				self.bloqueia = False
-				self.att_status(f"Fase de posicionamento - Jogador: {self.jogador_atual}")
+				if self.fase_posicionamento == True:
+					self.att_status(f"Fase de posicionamento - Jogador: {self.jogador_atual}")
+				else:
+					self.att_status(f"Fase de movimento - Jogador: {self.jogador_atual}")
 		vez_servidor = self.jogador_servidor == self.jogador_atual and self.rede.is_servidor
 		vez_cliente = self.jogador_cliente == self.jogador_atual and not self.rede.is_servidor
-		if self.fase_posicionamento:
-			bloqueia_tabuleiro()
-			libera_tabuleiro()
-		else:
-			if vez_servidor or vez_cliente:
-				self.bloqueia = False
-				self.att_status(f"Fase de movimento - Jogador: {self.jogador_atual}")
-			else:
-				self.bloqueia = True
-				self.att_status(f"Esperando o jogador {self.jogador_atual} jogar...")
+		bloqueia_tabuleiro()
+		libera_tabuleiro()
 
 	def att_jogo(self, enviar=True, message=None):
 		if enviar:
@@ -491,7 +488,7 @@ class JogoSeega:
 		mensagem_chat_para_enviar = None,
 		desligar = False,
 		reiniciar = False,
-		fase_movimento = False,
+		fase_posicionamento = True,
 		vencedor = None
 		):
 		# Envia o estado do jogo para o outro jogador
@@ -504,7 +501,7 @@ class JogoSeega:
 			"mensagem_chat": mensagem_chat_para_enviar,
 			"desligar": desligar,
 			"reiniciar": reiniciar,
-			"fase_movimento": fase_movimento,
+			"fase_posicionamento": fase_posicionamento,
 			"vencedor": vencedor
 		})
 		self.rede.enviar(mensagem_para_enviar)
@@ -535,7 +532,7 @@ class JogoSeega:
 			self.att_status("Encerrando o jogo...")
 			time.sleep(5)
 			self.root.destroy()
-		if dados["fase_movimento"] == True:
+		if dados["fase_posicionamento"] == False:
 			self.fase_posicionamento = False
 		if dados["vencedor"]:
 			mensagem = f"{vencedor} venceu!"
@@ -571,7 +568,6 @@ class JogoSeega:
 	def encerra_jogo(self):
 		confirma = tkmsg.askquestion("Encerrar jogo", "Você tem certeza que deseja encerrar o jogo?")
 		if confirma == "yes":
-			# self.att_jogo(enviar=True)
 			self.enviar_estado_do_jogo(encerrar_jogo=True)
 
 	def popup_game_over(self, mensagem):
