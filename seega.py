@@ -350,7 +350,6 @@ class JogoSeega:
 		peq_vitoria, vencedor = self.pequena_vitoria()
 		capturas_j1 = self.qtd_pecas_jogador_capturou[JOGADOR1]
 		capturas_j2 = self.qtd_pecas_jogador_capturou[JOGADOR2]
-
 		if eu_desisto or adversario_desiste:
 			if eu_desisto == True:
 				vencedor = JOGADOR2 if self.rede.is_servidor else JOGADOR1
@@ -439,7 +438,7 @@ class JogoSeega:
 			self.label_cont_pecas.config(text=f"Peças restantes - {JOGADOR1}: {PECAS_TOTAIS-p1} | {JOGADOR2}: {PECAS_TOTAIS-p2}")
 		#peças restantes do jogador
 		elif self.fase_posicionamento == False:
-			self.qtd_pecas_jogador_capturou[JOGADOR1], self.qtd_pecas_jogador_capturou[JOGADOR2] = PECAS_TOTAIS-p1, PECAS_TOTAIS-p2
+			self.qtd_pecas_jogador_capturou[JOGADOR1], self.qtd_pecas_jogador_capturou[JOGADOR2] = PECAS_TOTAIS-p2, PECAS_TOTAIS-p1
 			self.label_cont_pecas.config(text=f"Peças restantes - {JOGADOR1}: {p1} | {JOGADOR2}: {p2}")
 			#sempre que houver uma atualização do tabuleiro, há a checagem de vitória
 			self.checa_vitoria()
@@ -535,7 +534,7 @@ class JogoSeega:
 		if dados["fase_posicionamento"] == False:
 			self.fase_posicionamento = False
 		if dados["vencedor"]:
-			mensagem = f"{vencedor} venceu!"
+			mensagem = f"{dados["vencedor"]} venceu!"
 			self.popup_game_over(mensagem)
 		self.att_jogo(enviar=False)
 	
